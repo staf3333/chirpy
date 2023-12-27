@@ -42,7 +42,7 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func (cfg *apiConfig) fileServerHitsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	// need to convert string into array of bytes
 	hits := strconv.Itoa(cfg.fileServerHits)
@@ -55,19 +55,27 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	cfg.fileServerHits = 0
 }
 
-
+func apiRoutes(cfg *apiConfig) *chi.Mux {
+	r := chi.NewRouter()
+	r.Get("/healthz", readinessHandler)
+	r.Get("/reset", cfg.resetHandler)
+	return r
+}
+func adminRoutes(cfg *apiConfig) *chi.Mux {
+	r := chi.NewRouter()
+	fs := http.FileServer(http.Dir("./static/metrics"))
+	r.Get("/metrics", cfg.fileServerHitsHandler)
+	return r
+}
 func main() {
 	cfg := &apiConfig{}
 	r := chi.NewRouter()
-	apiRoutes := chi.NewRouter()
 	// mux := http.NewServeMux()
 	fsHandler := cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("."))))
 	r.Handle("/app/*", fsHandler)
 	r.Handle("/app", fsHandler)
-	apiRoutes.Get("/healthz", readinessHandler)
-	apiRoutes.Get("/metrics", cfg.fileServerHitsHandler)
-	apiRoutes.Get("/reset", cfg.resetHandler)
-	r.Mount("/api", apiRoutes)
+	r.Mount("/api", apiRoutes(cfg))
+	r.Mount("/admin", adminRoutes(cfg))
 	corsR := middlewareCors(r)
 	s := &http.Server{
 		Addr:           ":8080",

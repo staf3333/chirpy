@@ -4,6 +4,8 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func middlewareCors(next http.Handler) http.Handler {
@@ -34,6 +36,7 @@ type apiConfig struct {
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileServerHits += 1
+		w.Header().Set("Cache-Control", "No-Cache")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -47,26 +50,28 @@ func (cfg *apiConfig) fileServerHitsHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	// need to convert string into array of bytes
 	cfg.fileServerHits = 0
-	w.Write([]byte("Reset hits to 0!"))
 }
 
 
 func main() {
 	cfg := &apiConfig{}
-	mux := http.NewServeMux()
-	fileServerWithMetrics := cfg.middlewareMetricsInc(http.FileServer(http.Dir(".")))
-	mux.Handle("/app/", http.StripPrefix("/app/", fileServerWithMetrics))
-	mux.HandleFunc("/healthz", readinessHandler)
-	mux.HandleFunc("/metrics", cfg.fileServerHitsHandler)
-	mux.HandleFunc("/reset", cfg.resetHandler)
-	corsMux := middlewareCors(mux)
+	r := chi.NewRouter()
+	apiRoutes := chi.NewRouter()
+	// mux := http.NewServeMux()
+	fsHandler := cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("."))))
+	r.Handle("/app/*", fsHandler)
+	r.Handle("/app", fsHandler)
+	apiRoutes.Get("/healthz", readinessHandler)
+	apiRoutes.Get("/metrics", cfg.fileServerHitsHandler)
+	apiRoutes.Get("/reset", cfg.resetHandler)
+	r.Mount("/api", apiRoutes)
+	corsR := middlewareCors(r)
 	s := &http.Server{
 		Addr:           ":8080",
-		Handler:        corsMux,
+		Handler:        corsR,
 	}
 	log.Fatal(s.ListenAndServe())
 }

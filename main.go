@@ -1,9 +1,9 @@
 package main
 
 import (
+	"html/template"
 	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -41,12 +41,26 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	})
 }
 
-func (cfg *apiConfig) fileServerHitsHandler(w http.ResponseWriter, r *http.Request) {
+func outputMetricsHtml(w http.ResponseWriter, filename string, data interface{}) {
+	t, err := template.ParseFiles(filename)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := t.Execute(w, data); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+}
+
+func (cfg *apiConfig) metricsHtmlHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	// need to convert string into array of bytes
-	hits := strconv.Itoa(cfg.fileServerHits)
-	w.Write([]byte("Hits: " + hits))
+
+	hits := map[string]interface{}{
+		"Hits": cfg.fileServerHits,
+	}
+	outputMetricsHtml(w, "static/metrics.html", hits)
 }
 
 func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
@@ -63,8 +77,8 @@ func apiRoutes(cfg *apiConfig) *chi.Mux {
 }
 func adminRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
-	fs := http.FileServer(http.Dir("./static/metrics"))
-	r.Get("/metrics", cfg.fileServerHitsHandler)
+	// fs := http.FileServer(http.Dir("./static/metrics"))
+	r.Get("/metrics", cfg.metricsHtmlHandler)
 	return r
 }
 func main() {

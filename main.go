@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
@@ -69,9 +70,67 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	cfg.fileServerHits = 0
 }
 
+func handleLargeCharCount(w http.ResponseWriter) {
+	type response struct {
+		Body string `json:"error"`
+	}
+	log.Printf("Too many characters!")
+	respBody := response{
+		Body: "Chirp is too long",
+	}
+	dat, err := json.Marshal(respBody)
+	if err != nil {
+		log.Printf("Error marshalling JSON: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(400)
+	w.Write(dat)
+}
+
+func handleValidCharCount(w http.ResponseWriter) {
+	type response struct {
+		Body bool `json:"valid"`
+	}
+	respBody := response{
+		Body: true,
+	}
+	dat, err := json.Marshal(respBody)
+	if err != nil {
+		log.Printf("Error marshalling JSON: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(200)
+	w.Write(dat)
+}
+
+func chirpValidationHandler(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Body string `json:"body"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding JSON: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	if len(params.Body) > 140 {
+		handleLargeCharCount(w)
+	} else {
+		handleValidCharCount(w)
+	}
+}
+
 func apiRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
 	r.Get("/healthz", readinessHandler)
+	r.Post("/validate_chirp", chirpValidationHandler)
 	r.Get("/reset", cfg.resetHandler)
 	return r
 }

@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -70,13 +71,27 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	cfg.fileServerHits = 0
 }
 
-func handleLargeCharCount(w http.ResponseWriter) {
+func cleanBody(body string) string {
+	badWords := map[string]struct{}{}
+	badWords["kerfuffle"] = struct{}{}
+	badWords["sharbert"] = struct{}{}
+	badWords["fornax"] = struct{}{}
+	words := strings.Split(body, " ")
+	// range through words and check if word
+	for i, word := range words {
+		if _, ok := badWords[strings.ToLower(word)]; ok {
+			words[i] = "****"
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
 	type response struct {
 		Body string `json:"error"`
 	}
-	log.Printf("Too many characters!")
 	respBody := response{
-		Body: "Chirp is too long",
+		Body: msg,
 	}
 	dat, err := json.Marshal(respBody)
 	if err != nil {
@@ -85,16 +100,17 @@ func handleLargeCharCount(w http.ResponseWriter) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(400)
+    w.WriteHeader(code)
 	w.Write(dat)
 }
+	
 
-func handleValidCharCount(w http.ResponseWriter) {
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	type response struct {
-		Body bool `json:"valid"`
+		Body interface{} `json:"cleaned_body"`
 	}
 	respBody := response{
-		Body: true,
+		Body: payload,
 	}
 	dat, err := json.Marshal(respBody)
 	if err != nil {
@@ -103,7 +119,7 @@ func handleValidCharCount(w http.ResponseWriter) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(200)
+    w.WriteHeader(code)
 	w.Write(dat)
 }
 
@@ -121,9 +137,9 @@ func chirpValidationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(params.Body) > 140 {
-		handleLargeCharCount(w)
+		respondWithError(w, 400, "Chirp is too long")	
 	} else {
-		handleValidCharCount(w)
+		respondWithJSON(w, 200, cleanBody(params.Body))
 	}
 }
 

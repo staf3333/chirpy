@@ -114,7 +114,8 @@ func (cfg *apiConfig) chirpValidationHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	type responseBody struct {
-		Body string `json:"cleaned_body"`
+		Body string `json:"body"`
+		ID int `json:"id"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -132,13 +133,15 @@ func (cfg *apiConfig) chirpValidationHandler(w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			log.Fatal("error loading db")
 		}
-		newChirp, err := db.CreateChirp(params.Body)
+		cleanBodyStr := cleanBody(params.Body)
+		newChirp, err := db.CreateChirp(cleanBodyStr)
 		if err != nil {
+			fmt.Println("ran into error creating chirp")
 			log.Fatal("error creating chirp")
 		}
-		fmt.Println(newChirp)
-		respondWithJSON(w, 200, responseBody{
-			Body: cleanBody(params.Body),
+		respondWithJSON(w, 201, responseBody{
+			Body: newChirp.Body,
+			ID: newChirp.ID,
 		})
 	}
 }

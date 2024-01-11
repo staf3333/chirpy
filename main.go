@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/staf3333/chirpy/internal/database"
 )
 
 func middlewareCors(next http.Handler) http.Handler {
@@ -33,6 +35,7 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 
 type apiConfig struct {
 	fileServerHits int
+	chirpID int
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -86,50 +89,36 @@ func cleanBody(body string) string {
 	return strings.Join(words, " ")
 }
 
-func respondWithError(w http.ResponseWriter, code int, msg string) {
-	type response struct {
-		Body string `json:"error"`
-	}
-	respBody := response{
-		Body: msg,
-	}
-	dat, err := json.Marshal(respBody)
-	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(code)
-	w.Write(dat)
+func respondWithError(w http.ResponseWriter, code int, msg string) error {
+	return respondWithJSON(w, code, map[string]string{"error": msg})
 }
 	
 
-func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
-	type response struct {
-		Body interface{} `json:"cleaned_body"`
-	}
-	respBody := response{
-		Body: payload,
-	}
-	dat, err := json.Marshal(respBody)
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
+	response, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Error marshalling JSON: %s", err)
 		w.WriteHeader(500)
-		return
+		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(code)
-	w.Write(dat)
+	w.Write(response)
+	return nil
 }
 
-func chirpValidationHandler(w http.ResponseWriter, r *http.Request) {
-	type parameters struct {
+func (cfg *apiConfig) chirpValidationHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	type requestBody struct {
 		Body string `json:"body"`
 	}
 
+	type responseBody struct {
+		Body string `json:"cleaned_body"`
+	}
+
 	decoder := json.NewDecoder(r.Body)
-	params := parameters{}
+	params := requestBody{}
 	err := decoder.Decode(&params)
 	if err != nil {
 		log.Printf("Error decoding JSON: %s", err)
@@ -139,20 +128,30 @@ func chirpValidationHandler(w http.ResponseWriter, r *http.Request) {
 	if len(params.Body) > 140 {
 		respondWithError(w, 400, "Chirp is too long")	
 	} else {
-		respondWithJSON(w, 200, cleanBody(params.Body))
+		db, err := database.NewDB("database.json")
+		if err != nil {
+			log.Fatal("error loading db")
+		}
+		newChirp, err := db.CreateChirp(params.Body)
+		if err != nil {
+			log.Fatal("error creating chirp")
+		}
+		fmt.Println(newChirp)
+		respondWithJSON(w, 200, responseBody{
+			Body: cleanBody(params.Body),
+		})
 	}
 }
 
 func apiRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
 	r.Get("/healthz", readinessHandler)
-	r.Post("/validate_chirp", chirpValidationHandler)
 	r.Get("/reset", cfg.resetHandler)
+	r.Post("/chirps", cfg.chirpValidationHandler)
 	return r
 }
 func adminRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
-	// fs := http.FileServer(http.Dir("./static/metrics"))
 	r.Get("/metrics", cfg.metricsHtmlHandler)
 	return r
 }

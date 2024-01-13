@@ -35,7 +35,7 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 
 type apiConfig struct {
 	fileServerHits int
-	chirpID int
+	db *database.DB
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -107,15 +107,10 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error
 	return nil
 }
 
-func (cfg *apiConfig) chirpValidationHandler(w http.ResponseWriter, r *http.Request) {
+func chirpValidationHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	type requestBody struct {
 		Body string `json:"body"`
-	}
-
-	type responseBody struct {
-		Body string `json:"body"`
-		ID int `json:"id"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -139,27 +134,49 @@ func (cfg *apiConfig) chirpValidationHandler(w http.ResponseWriter, r *http.Requ
 			fmt.Println("ran into error creating chirp")
 			log.Fatal("error creating chirp")
 		}
-		respondWithJSON(w, 201, responseBody{
+		respondWithJSON(w, 201, struct {
+			Body string `json:"body"`
+			ID int `json:"id"`
+		}{
 			Body: newChirp.Body,
 			ID: newChirp.ID,
 		})
 	}
 }
 
+// create a function that handles get request (gets chirps and responds with some json)
+func (cfg *apiConfig) chirpsGetHandler(w http.ResponseWriter, r *http.Request) {
+	// don't need to do any checks, can just respond with some json
+	chirps, err := cfg.db.GetChirps()
+	if err != nil {
+		fmt.Println("Error getting chirps from database")
+	}
+	err = respondWithJSON(w, 200, chirps)
+}
+
 func apiRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
 	r.Get("/healthz", readinessHandler)
 	r.Get("/reset", cfg.resetHandler)
-	r.Post("/chirps", cfg.chirpValidationHandler)
+	r.Post("/chirps", chirpValidationHandler)
+	r.Get("/chirps", cfg.chirpsGetHandler)
 	return r
 }
+
 func adminRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
 	r.Get("/metrics", cfg.metricsHtmlHandler)
 	return r
 }
+
 func main() {
-	cfg := &apiConfig{}
+	db, err := database.NewDB("database.json")
+	if err != nil {
+		log.Fatal("error loading DB")
+	}
+	cfg := &apiConfig{
+		db: db,
+	}
 	r := chi.NewRouter()
 	// mux := http.NewServeMux()
 	fsHandler := cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("."))))

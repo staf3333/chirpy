@@ -8,8 +8,8 @@ import (
 	"sync"
 )
 type Chirp struct {
-	ID int
-	Body string
+	ID int `json:"id"`
+	Body string `json:"body"`
 }
 
 type DB struct {

@@ -152,14 +152,24 @@ func (cfg *apiConfig) chirpsGetHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Error getting chirps from database")
 	}
 	err = respondWithJSON(w, 200, chirps)
+	if err != nil {
+		fmt.Println("Error responding to the client")
+	}
+}
+
+func chirpsRoutes(cfg *apiConfig) *chi.Mux {
+	r := chi.NewRouter()
+	r.Post("/", chirpValidationHandler)
+	r.Get("/", cfg.chirpsGetHandler)
+	// r.Get("/{id}", )
+	return r
 }
 
 func apiRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
 	r.Get("/healthz", readinessHandler)
 	r.Get("/reset", cfg.resetHandler)
-	r.Post("/chirps", chirpValidationHandler)
-	r.Get("/chirps", cfg.chirpsGetHandler)
+	r.Mount("/chirps", chirpsRoutes(cfg))
 	return r
 }
 

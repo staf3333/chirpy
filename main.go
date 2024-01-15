@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -157,11 +158,75 @@ func (cfg *apiConfig) chirpsGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (cfg *apiConfig) chirpsWithIDHandler(w http.ResponseWriter, r *http.Request) {
+
+	// get the ID from the url params (will be a string so need to cast to int)
+	chirpID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		fmt.Println("Error converting ID to string")
+	}
+
+	// get all the chirps and find the one with the id you want
+	chirps, err := cfg.db.GetChirps()
+	if err != nil {
+		fmt.Println("Error getting chirps from database")
+	}
+	for _, chirp := range chirps {
+		if chirp.ID == chirpID {
+			err = respondWithJSON(w, 200, chirp)
+			if err != nil {
+				fmt.Println("found chirp but trouble responding")
+			}
+			return
+		}
+	}
+
+	// if chirp not found, respond with error
+	respondWithError(w, 404, "")
+
+}
+
+func (cfg *apiConfig) userHandler(w http.ResponseWriter, r *http.Request) {
+
+	defer r.Body.Close()
+	type requestBody struct {
+		Email string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := requestBody{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding JSON: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	user, err := cfg.db.CreateUser(params.Email)	
+	if err != nil {
+		respondWithError(w, 500, "Error creating user in DB")
+		return
+	}
+	respondWithJSON(w, 201, struct {
+		Email string `json:"email"`
+		ID int `json:"id"`
+	}{
+		Email: user.Email,
+		ID: user.ID,
+	})
+}
+
 func chirpsRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
 	r.Post("/", chirpValidationHandler)
 	r.Get("/", cfg.chirpsGetHandler)
-	// r.Get("/{id}", )
+	r.Get("/{id}", cfg.chirpsWithIDHandler)
+	return r
+}
+
+func usersRoutes(cfg *apiConfig) *chi.Mux {
+	r := chi.NewRouter()
+	r.Post("/", cfg.userHandler)
 	return r
 }
 
@@ -170,6 +235,7 @@ func apiRoutes(cfg *apiConfig) *chi.Mux {
 	r.Get("/healthz", readinessHandler)
 	r.Get("/reset", cfg.resetHandler)
 	r.Mount("/chirps", chirpsRoutes(cfg))
+	r.Mount("/users", usersRoutes(cfg))
 	return r
 }
 

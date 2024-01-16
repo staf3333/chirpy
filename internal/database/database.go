@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"sync"
+
+	"golang.org/x/crypto/bcrypt"
 )
 type Chirp struct {
 	ID int `json:"id"`
@@ -25,6 +27,7 @@ type DBStructure struct {
 type User struct {
 	ID int `json:"id"`
 	Email string `json:"email"`
+	Password []byte 
 }
 
 // NewDB creates a new database connection
@@ -38,7 +41,17 @@ func NewDB(path string) (*DB, error) {
 	return db, err
 }
 
-func (db *DB) CreateUser(email string) (User, error) {
+func getUserByEmail(email string, dbStruct DBStructure) (User, error) {
+
+	for _, user := range dbStruct.Users {
+		if user.Email == email {
+			return user, nil 
+		}
+	}
+	return User{}, errors.New("User does not exist") 
+}
+
+func (db *DB) LoginUser(email string, password string) (User, error) {
 
 	dbStruct, err := db.loadDB()
 	if err != nil {
@@ -46,10 +59,45 @@ func (db *DB) CreateUser(email string) (User, error) {
 		return User{}, err
 	}
 
+	user, err := getUserByEmail(email, dbStruct)
+	if err != nil {
+		return User{}, errors.New("user does not exist")
+	}
+
+	err = bcrypt.CompareHashAndPassword(user.Password, []byte(password))
+	if err != nil {
+		return User{}, errors.New("passwords do not match")
+	}
+
+	return user, nil
+
+}
+
+func (db *DB) CreateUser(email string, password string) (User, error) {
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		fmt.Println("Error loading DBStructure for creating users")
+		return User{}, err
+	}
+
+	// check if user already exists with same email before creating
+	_, err = getUserByEmail(email, dbStruct)
+	if err == nil {
+		return User{}, errors.New("user already exists with that email, try again")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		fmt.Println("Error hashing user's password")
+		return User{}, err
+	}
+
 	id := len(dbStruct.Users) + 1
 	newUser := User{
 		ID: id,
 		Email: email,
+		Password: hash, 
 	}
 	dbStruct.Users[id] = newUser
 	err = db.writeDB(dbStruct)

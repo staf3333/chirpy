@@ -191,6 +191,7 @@ func (cfg *apiConfig) userHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	type requestBody struct {
 		Email string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -202,12 +203,45 @@ func (cfg *apiConfig) userHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := cfg.db.CreateUser(params.Email)	
+	user, err := cfg.db.CreateUser(params.Email, params.Password)	
 	if err != nil {
-		respondWithError(w, 500, "Error creating user in DB")
+		// respondWithError(w, 500, "Error creating user in DB")
+		respondWithError(w, 500, err.Error())
 		return
 	}
 	respondWithJSON(w, 201, struct {
+		Email string `json:"email"`
+		ID int `json:"id"`
+	}{
+		Email: user.Email,
+		ID: user.ID,
+	})
+}
+
+func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
+
+	defer r.Body.Close()
+	type requestBody struct {
+		Email string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := requestBody{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding JSON: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	user, err := cfg.db.LoginUser(params.Email, params.Password)
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	respondWithJSON(w, 200, struct {
 		Email string `json:"email"`
 		ID int `json:"id"`
 	}{
@@ -234,6 +268,7 @@ func apiRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
 	r.Get("/healthz", readinessHandler)
 	r.Get("/reset", cfg.resetHandler)
+	r.Post("/login", cfg.loginHandler)
 	r.Mount("/chirps", chirpsRoutes(cfg))
 	r.Mount("/users", usersRoutes(cfg))
 	return r

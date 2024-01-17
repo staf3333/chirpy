@@ -6,10 +6,14 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/joho/godotenv"
 	"github.com/staf3333/chirpy/internal/database"
 )
 
@@ -37,6 +41,7 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 type apiConfig struct {
 	fileServerHits int
 	db *database.DB
+	jwtSecret string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -186,7 +191,7 @@ func (cfg *apiConfig) chirpsWithIDHandler(w http.ResponseWriter, r *http.Request
 
 }
 
-func (cfg *apiConfig) userHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) userCreateHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
 	type requestBody struct {
@@ -218,12 +223,47 @@ func (cfg *apiConfig) userHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func stripAuthHeaderPrefix(h string) string {
+	return strings.Split(h, " ")[1]
+}
+
+func (cfg *apiConfig) userUpdateHandler(w http.ResponseWriter, r *http.Request) {
+	
+	authHeader := r.Header.Get("Authorization")
+	if len(authHeader) > 0 {
+		fmt.Println(stripAuthHeaderPrefix(authHeader))
+	}
+	// if len(authHeader) == 0 {
+	// 	log.Printf("unauthorized attempt to modify resources")
+	// 	w.WriteHeader(401)
+	// 	return
+	// }
+
+
+	defer r.Body.Close()
+	type requestBody struct {
+		Email string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := requestBody{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding JSON: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+}
+
 func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
 	type requestBody struct {
 		Email string `json:"email"`
 		Password string `json:"password"`
+		Expiration *int `json:"expires_in_second,omitempty"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -241,12 +281,33 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var expirationDuration time.Duration
+	if params.Expiration == nil || *params.Expiration > 86400 {
+		expirationDuration = time.Duration(86400) * time.Second
+	} else {
+		expirationDuration = time.Duration(*params.Expiration) * time.Second
+	}
+	jwt := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer: "chirpy",
+		IssuedAt: jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expirationDuration)),
+		Subject: strconv.Itoa(user.ID),
+	})
+
+	tokenString, err := jwt.SignedString([]byte(cfg.jwtSecret))
+	if err != nil {
+		fmt.Println(err)
+		log.Fatal("error generating users jwt token")
+	}
+
 	respondWithJSON(w, 200, struct {
 		Email string `json:"email"`
 		ID int `json:"id"`
+		Token string `json:"token"`
 	}{
 		Email: user.Email,
 		ID: user.ID,
+		Token: tokenString, 
 	})
 }
 
@@ -260,7 +321,8 @@ func chirpsRoutes(cfg *apiConfig) *chi.Mux {
 
 func usersRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
-	r.Post("/", cfg.userHandler)
+	r.Post("/", cfg.userCreateHandler)
+	r.Put("/", cfg.userUpdateHandler)
 	return r
 }
 
@@ -285,8 +347,14 @@ func main() {
 	if err != nil {
 		log.Fatal("error loading DB")
 	}
+	err = godotenv.Load()
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
 	cfg := &apiConfig{
 		db: db,
+		jwtSecret: jwtSecret,
 	}
 	r := chi.NewRouter()
 	// mux := http.NewServeMux()

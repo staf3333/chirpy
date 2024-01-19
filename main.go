@@ -304,7 +304,7 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	type requestBody struct {
 		Email string `json:"email"`
 		Password string `json:"password"`
-		Expiration *int `json:"expires_in_second,omitempty"`
+		Expiration *int `json:"expires_in_seconds,omitempty"`
 	}
 
 	decoder := json.NewDecoder(r.Body)

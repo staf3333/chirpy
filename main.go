@@ -253,26 +253,31 @@ func (cfg *apiConfig) userUpdateHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	tokenString = stripAuthHeaderPrefix(authHeader)
 
-	type MyCustomCLaims struct {
+	type MyCustomClaims struct {
 		jwt.RegisteredClaims
-		Issuer string
-		IssuedAt jwt.NumericDate
-		ExpiresAt jwt.NumericDate
-		Subject string
 	}
-	claims := &MyCustomCLaims{}
+	claims := &MyCustomClaims{}
 	keyFunc := func(token *jwt.Token) (interface{}, error) {
 		return []byte(cfg.jwtSecret), nil
 	}
-	_ , err = jwt.ParseWithClaims(tokenString, claims, keyFunc)
+	token , err := jwt.ParseWithClaims(tokenString, claims, keyFunc)
 	if err != nil {
 		log.Printf("unauthorized attempt to modify resources, claims don't match")
-		w.WriteHeader(401)
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	if !token.Valid {
+		log.Printf("token has expired")
+		respondWithError(w, 401, err.Error())
 		return
 	}
 	
-	fmt.Println(claims.Subject, claims.Issuer, claims.IssuedAt)
-	userID, err := strconv.Atoi(claims.Subject)
+	userIDStr, err := token.Claims.GetSubject()
+	if err != nil {
+		log.Printf("issue getting subject from token")
+	}
+	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
 		log.Printf("Error converting id from string to int")
 	}

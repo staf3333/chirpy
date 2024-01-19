@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 
@@ -49,6 +50,40 @@ func getUserByEmail(email string, dbStruct DBStructure) (User, error) {
 		}
 	}
 	return User{}, errors.New("User does not exist") 
+}
+
+func (db *DB) UpdateUser(id int, email string, password string) (User, error) {
+	
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		fmt.Println("Error loading DBStructure for creating users")
+		return User{}, err
+	}
+
+	// get user with corresponding id
+	user, ok := dbStruct.Users[id]
+	if !ok {
+		log.Printf("User does not exist")
+		return User{}, errors.New("user does not exist")
+	}
+	
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		fmt.Println("Error hashing user's password")
+		return User{}, err
+	}
+
+	user.Email = email
+	user.Password = hash
+	dbStruct.Users[id] = user
+
+	err = db.writeDB(dbStruct)
+	if err != nil {
+		fmt.Println("Error saving user to database")
+		return User{}, err
+	}
+	return user, nil
+
 }
 
 func (db *DB) LoginUser(email string, password string) (User, error) {

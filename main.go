@@ -229,17 +229,6 @@ func stripAuthHeaderPrefix(h string) string {
 
 func (cfg *apiConfig) userUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	
-	authHeader := r.Header.Get("Authorization")
-	if len(authHeader) > 0 {
-		fmt.Println(stripAuthHeaderPrefix(authHeader))
-	}
-	// if len(authHeader) == 0 {
-	// 	log.Printf("unauthorized attempt to modify resources")
-	// 	w.WriteHeader(401)
-	// 	return
-	// }
-
-
 	defer r.Body.Close()
 	type requestBody struct {
 		Email string `json:"email"`
@@ -255,6 +244,53 @@ func (cfg *apiConfig) userUpdateHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	authHeader := r.Header.Get("Authorization")
+	var tokenString string
+	if len(authHeader) == 0 {
+		log.Printf("unauthorized attempt to modify resources")
+		w.WriteHeader(401)
+		return
+	}
+	tokenString = stripAuthHeaderPrefix(authHeader)
+
+	type MyCustomCLaims struct {
+		jwt.RegisteredClaims
+		Issuer string
+		IssuedAt jwt.NumericDate
+		ExpiresAt jwt.NumericDate
+		Subject string
+	}
+	claims := &MyCustomCLaims{}
+	keyFunc := func(token *jwt.Token) (interface{}, error) {
+		return []byte(cfg.jwtSecret), nil
+	}
+	_ , err = jwt.ParseWithClaims(tokenString, claims, keyFunc)
+	if err != nil {
+		log.Printf("unauthorized attempt to modify resources, claims don't match")
+		w.WriteHeader(401)
+		return
+	}
+	
+	fmt.Println(claims.Subject, claims.Issuer, claims.IssuedAt)
+	userID, err := strconv.Atoi(claims.Subject)
+	if err != nil {
+		log.Printf("Error converting id from string to int")
+	}
+
+	updatedUser, err := cfg.db.UpdateUser(userID, params.Email, params.Password)
+	if err != nil {
+		log.Printf("error updating user in the database")
+		w.WriteHeader(500)
+		return
+	}
+
+	respondWithJSON(w, 200, struct {
+		Email string `json:"email"`
+		ID int `json:"id"`
+	}{
+		Email: updatedUser.Email,
+		ID: updatedUser.ID,
+	})
 }
 
 func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {

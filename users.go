@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -67,22 +67,36 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var expirationDuration time.Duration
-	if params.Expiration == nil || *params.Expiration > 86400 {
-		expirationDuration = time.Duration(86400) * time.Second
-	} else {
-		expirationDuration = time.Duration(*params.Expiration) * time.Second
-	}
-	jwt := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer: "chirpy",
+	// var expirationDuration time.Duration
+	// if params.Expiration == nil || *params.Expiration > 86400 {
+	// 	expirationDuration = time.Duration(86400) * time.Second
+	// } else {
+	// 	expirationDuration = time.Duration(*params.Expiration) * time.Second
+	// }
+
+	accessTokenExpirationDuration := time.Duration(1) * time.Hour
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer: "chirpy-access",
 		IssuedAt: jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expirationDuration)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(accessTokenExpirationDuration)),
 		Subject: strconv.Itoa(user.ID),
 	})
 
-	tokenString, err := jwt.SignedString([]byte(cfg.jwtSecret))
+	accessTokenString, err := accessToken.SignedString([]byte(cfg.jwtSecret))
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal("error generating users jwt token")
+	}
+
+	refreshTokenExpirationDuration := time.Duration(24 * 60) * time.Hour
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer: "chirpy-refresh",
+		IssuedAt: jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(refreshTokenExpirationDuration)),
+		Subject: strconv.Itoa(user.ID),
+	})
+
+	refreshTokenString, err := refreshToken.SignedString([]byte(cfg.jwtSecret))
+	if err != nil {
 		log.Fatal("error generating users jwt token")
 	}
 
@@ -90,11 +104,17 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 		ID int `json:"id"`
 		Token string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
 	}{
 		Email: user.Email,
 		ID: user.ID,
-		Token: tokenString, 
+		Token: accessTokenString,
+		RefreshToken: refreshTokenString, 
 	})
+}
+
+func stripAuthHeaderPrefix(h string) string {
+	return strings.Split(h, " ")[1]
 }
 
 func (cfg *apiConfig) userUpdateHandler(w http.ResponseWriter, r *http.Request) {
@@ -121,16 +141,24 @@ func (cfg *apiConfig) userUpdateHandler(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(401)
 		return
 	}
+
+	// get token string from authorization header
 	tokenString = stripAuthHeaderPrefix(authHeader)
 
 	type MyCustomClaims struct {
 		jwt.RegisteredClaims
 	}
 	claims := &MyCustomClaims{}
-	keyFunc := func(token *jwt.Token) (interface{}, error) {
+
+	// Keyfunc will be used by the Parse methods as a 
+	// callback function to supply the key for verification. 
+	// The function receives the parsed, but unverified Token. 
+	// This allows you to use properties in the Header 
+	// of the token (such as `kid`) to identify which key to use.
+	keyFunc := func (token *jwt.Token) (interface{}, error) {
 		return []byte(cfg.jwtSecret), nil
 	}
-	token , err := jwt.ParseWithClaims(tokenString, claims, keyFunc)
+	token, err := jwt.ParseWithClaims(tokenString, claims, keyFunc)
 	if err != nil {
 		log.Printf("unauthorized attempt to modify resources, claims don't match")
 		respondWithError(w, 401, err.Error())
@@ -140,6 +168,19 @@ func (cfg *apiConfig) userUpdateHandler(w http.ResponseWriter, r *http.Request) 
 	if !token.Valid {
 		log.Printf("token has expired")
 		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	issuerString, err := token.Claims.GetIssuer()
+	if err != nil {
+		log.Printf("issue getting issuer from token")
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	if issuerString == "chirpy-refresh" {
+		log.Printf("can't use a refresh token to modify user")
+		respondWithError(w, 401, "can't use refresh token bruh")
 		return
 	}
 	

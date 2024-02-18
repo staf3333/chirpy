@@ -168,10 +168,6 @@ func (cfg *apiConfig) chirpsWithIDHandler(w http.ResponseWriter, r *http.Request
 
 }
 
-func stripAuthHeaderPrefix(h string) string {
-	return strings.Split(h, " ")[1]
-}
-
 func chirpsRoutes(cfg *apiConfig) *chi.Mux {
 	r := chi.NewRouter()
 	r.Post("/", chirpValidationHandler)

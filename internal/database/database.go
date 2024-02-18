@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -23,6 +24,7 @@ type DB struct {
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
 	Users map[int]User `json:"users"`
+	RevokeTokens map[string]time.Time `json:"revokeTokens"`
 }
 
 type User struct {
@@ -164,6 +166,35 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 	return newChirp, nil
 }
 
+func (db *DB) AddRevokeToken(tokenString string, revokeTime time.Time) error {
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		fmt.Println("Error loading db for adding revoke token")
+		return err
+	}
+
+	dbStruct.RevokeTokens[tokenString] = revokeTime
+	return nil
+}
+
+func (db *DB) GetRevokeToken(tokenString string) (bool, error) {
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		log.Printf("Error loading db for getting revoke token")
+		return false, err
+	}
+
+	for token, _ := range dbStruct.RevokeTokens {
+		if token == tokenString {
+			return true, nil 
+		}
+	}
+	return false, nil
+}
+
+
 // GetChirps returns all chirps in the database
 func (db *DB) GetChirps() ([]Chirp, error) {
 	fmt.Println("Attempting to load struct")
@@ -178,6 +209,7 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 	}
 	return chirps, nil
 }
+
 func (db *DB) createDB() error {
 	dbStructure := DBStructure{
 		Chirps: map[int]Chirp{},

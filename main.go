@@ -188,6 +188,8 @@ func apiRoutes(cfg *apiConfig) *chi.Mux {
 	r.Get("/healthz", readinessHandler)
 	r.Get("/reset", cfg.resetHandler)
 	r.Post("/login", cfg.loginHandler)
+	r.Post("/refresh", cfg.refreshHandler)
+	r.Post("/revoke", cfg.revokeHandler)
 	r.Mount("/chirps", chirpsRoutes(cfg))
 	r.Mount("/users", usersRoutes(cfg))
 	return r

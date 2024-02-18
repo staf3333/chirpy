@@ -67,13 +67,6 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// var expirationDuration time.Duration
-	// if params.Expiration == nil || *params.Expiration > 86400 {
-	// 	expirationDuration = time.Duration(86400) * time.Second
-	// } else {
-	// 	expirationDuration = time.Duration(*params.Expiration) * time.Second
-	// }
-
 	accessTokenExpirationDuration := time.Duration(1) * time.Hour
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer: "chirpy-access",

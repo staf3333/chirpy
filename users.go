@@ -180,10 +180,14 @@ func (cfg *apiConfig) userUpdateHandler(w http.ResponseWriter, r *http.Request) 
 	userIDStr, err := token.Claims.GetSubject()
 	if err != nil {
 		log.Printf("issue getting subject from token")
+		respondWithError(w, 401, err.Error())
+		return
 	}
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
 		log.Printf("Error converting id from string to int")
+		respondWithError(w, 401, err.Error())
+		return
 	}
 
 	updatedUser, err := cfg.db.UpdateUser(userID, params.Email, params.Password)

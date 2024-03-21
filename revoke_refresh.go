@@ -57,15 +57,38 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
 	isRevoked, err := cfg.db.GetRevokeToken(tokenString)
 	if err != nil {
 		respondWithError(w, 401, err.Error())
+		return
 	}
 	if isRevoked {
 		respondWithError(w, 401, "this token has been revoked, sorry")
+		return
+	}
+
+	userIDStr, err := token.Claims.GetSubject()
+	if err != nil {
+		log.Printf("issue getting subject from token")
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	// here is where I need to create a new access token to return
+	accessTokenExpirationDuration := time.Duration(1) * time.Hour
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer: "chirpy-access",
+		IssuedAt: jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(accessTokenExpirationDuration)),
+		Subject: userIDStr,
+	})
+
+	accessTokenString, err := accessToken.SignedString([]byte(cfg.jwtSecret))
+	if err != nil {
+		log.Fatal("error generating users jwt token")
 	}
 
 	respondWithJSON(w, 200, struct {
 		Token string `json:"token"`
 	}{
-		Token: tokenString,
+		Token: accessTokenString,
 	})
 }
 
@@ -112,15 +135,6 @@ func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("wrong type of token")
 		respondWithError(w, 401, "wrong type of token bruh")
 		return
-	}
-
-	// check if refresh token has been revoked by looking in the db
-	isRevoked, err := cfg.db.GetRevokeToken(tokenString)
-	if err != nil {
-		respondWithError(w, 401, err.Error())
-	}
-	if isRevoked {
-		respondWithError(w, 401, "this token has been revoked, sorry")
 	}
 
 	err = cfg.db.AddRevokeToken(tokenString, time.Now())

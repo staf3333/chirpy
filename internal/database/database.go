@@ -174,7 +174,16 @@ func (db *DB) AddRevokeToken(tokenString string, revokeTime time.Time) error {
 		return err
 	}
 
+	// fmt.Println(tokenString, revokeTime)
+
 	dbStruct.RevokeTokens[tokenString] = revokeTime
+
+	err = db.writeDB(dbStruct)
+	if err != nil {
+		fmt.Println("Error saving revoke token to database")
+		return err
+	}
+
 	return nil
 }
 
@@ -186,7 +195,7 @@ func (db *DB) GetRevokeToken(tokenString string) (bool, error) {
 		return false, err
 	}
 
-	for token, _ := range dbStruct.RevokeTokens {
+	for token := range dbStruct.RevokeTokens {
 		if token == tokenString {
 			return true, nil 
 		}
@@ -214,6 +223,7 @@ func (db *DB) createDB() error {
 	dbStructure := DBStructure{
 		Chirps: map[int]Chirp{},
 		Users: map[int]User{},
+		RevokeTokens: map[string]time.Time{},
 	}
 	return db.writeDB(dbStructure)
 }
